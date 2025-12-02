@@ -5,10 +5,11 @@ addon.desc    = 'Displays 3D hitboxes and range visualizations around entities.'
 addon.link    = 'https://github.com/sruon/Ashita4-HitboxDisplay';
 
 require('common');
-local ffi  = require('ffi');
-local d3d8 = require('d3d8');
-local bit  = require('bit');
-local ui   = require('ui');
+local ffi     = require('ffi');
+local d3d8    = require('d3d8');
+local imgui   = require('imgui');
+local bit     = require('bit');
+local ui      = require('ui');
 
 local C       = ffi.C;
 local d3d8dev = d3d8.get_device();
@@ -47,31 +48,31 @@ local config =
     base_aoe           =
     {
         enabled      = { false },
-        radius_index = { 7 },             -- Index into AOE_RADIUS_VALUES (default: 10 yalms, 0-based index)
+        radius_index = { 7 },                    -- Index into AOE_RADIUS_VALUES (default: 10 yalms, 0-based index)
         color        = { 1.0, 0.25, 0.25, 0.37 } -- Red
     },
     melee_range        =
     {
         enabled        = { false },
-        show_all_races = { true },                      -- Show all race rings instead of just selected race
-        base_color     = { 1.0, 0.25, 0.25, 0.37 },     -- Red for base melee range
+        show_all_races = { true },                        -- Show all race rings instead of just selected race
+        base_color     = { 1.0, 0.25, 0.25, 0.37 },       -- Red for base melee range
         race_colors    = {
-            { 1.0, 1.0, 0.0, 0.37 },                    -- Taru: Yellow
-            { 0.0, 1.0, 0.0, 0.37 },                    -- Hume/Elvaan/Mithra: Green
-            { 0.0, 0.5, 1.0, 0.37 }                     -- Galka: Blue
+            { 1.0, 1.0, 0.0, 0.37 },                      -- Taru: Yellow
+            { 0.0, 1.0, 0.0, 0.37 },                      -- Hume/Elvaan/Mithra: Green
+            { 0.0, 0.5, 1.0, 0.37 }                       -- Galka: Blue
         },
         race_enabled   = { { true }, { true }, { true } } -- Enable flags for each race
     },
     spell_range        =
     {
         enabled        = { false },
-        show_all_races = { true },                      -- Show all race rings instead of just selected race
-        radius_index   = { 11 },                        -- Index into AOE_RADIUS_VALUES (default: 20 yalms, 0-based index)
-        base_color     = { 0.5, 0.5, 1.0, 0.37 },       -- Blue for base spell range
+        show_all_races = { true },                        -- Show all race rings instead of just selected race
+        radius_index   = { 11 },                          -- Index into AOE_RADIUS_VALUES (default: 20 yalms, 0-based index)
+        base_color     = { 0.5, 0.5, 1.0, 0.37 },         -- Blue for base spell range
         race_colors    = {
-            { 1.0, 1.0, 0.0, 0.37 },                    -- Taru: Yellow
-            { 0.0, 1.0, 0.0, 0.37 },                    -- Hume/Elvaan/Mithra: Green
-            { 0.0, 0.5, 1.0, 0.37 }                     -- Galka: Blue
+            { 1.0, 1.0, 0.0, 0.37 },                      -- Taru: Yellow
+            { 0.0, 1.0, 0.0, 0.37 },                      -- Hume/Elvaan/Mithra: Green
+            { 0.0, 0.5, 1.0, 0.37 }                       -- Galka: Blue
         },
         race_enabled   = { { true }, { true }, { true } } -- Enable flags for each race
     },
