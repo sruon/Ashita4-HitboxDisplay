@@ -38,7 +38,7 @@ local RACE_DATA =
 };
 
 -- Predefined AoE radius values
-local AOE_RADIUS_VALUES = { 1, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 25, 30, 35, 40, 50 };
+local AOE_RADIUS_VALUES = { 1, 3, 4, 5, 6, 7, 8, 10, 12, 14, 15, 16, 20, 25, 30, 35, 40, 50 };
 
 -- AoE Circle Configuration
 local config =
@@ -87,6 +87,15 @@ local config =
             { name = 'Long Bow',  min = 6.0, max = 9.5, enabled = { true }, color = { 0.0, 0.9, 1.0, 0.5 } }, -- Bright Cyan (50% transparent)
             { name = 'Short Bow', min = 4.0, max = 6.4, enabled = { true }, color = { 0.4, 1.0, 0.0, 0.5 } }  -- Lime Green (50% transparent)
         }
+    },
+    target_cone        =
+    {
+        enabled      = { false },
+        hourglass    = { false },                  -- Draw cone in both directions
+        angle        = { 45 },                     -- Cone angle in degrees (default: 45)
+        radius_index = { 7 },                      -- Index into AOE_RADIUS_VALUES (default: 10 yalms)
+        color        = { 1.0, 1.0, 0.0, 0.35 },    -- Yellow, semi-transparent
+        outline      = { true }                    -- Draw outline
     }
 };
 
@@ -560,6 +569,157 @@ local function draw_aoe_circle(x, y, z, radius, color_rgba, view, projection, vi
 end
 
 --[[
+* Draws a cone originating from the target entity's position
+* The cone points in the direction the target is facing
+* @param x, y, z - Target position
+* @param facing - Target facing angle in radians (0 = north, increases clockwise)
+* @param cone_angle_degrees - Total cone angle in degrees
+* @param radius - Maximum cone range
+* @param color_rgba - RGBA color array
+* @param draw_outline - Whether to draw outline
+* @param view, projection, viewport - Rendering matrices
+--]]
+local function draw_cone(x, y, z, facing, cone_angle_degrees, radius, color_rgba, draw_outline, view, projection, viewport)
+    if x == nil or y == nil or z == nil or facing == nil or cone_angle_degrees == nil or radius == nil then
+        return false;
+    end
+
+    local cone_angle = math.rad(cone_angle_degrees); -- Convert degrees to radians
+    local segments = 24;
+    local coneColor = rgba_to_argb(color_rgba[1], color_rgba[2], color_rgba[3], color_rgba[4]);
+
+    -- Create triangle fan from origin to arc
+    local vertices = ffi.new('hitbox_vertex_t[?]', segments * 3);
+    local vidx = 0;
+
+    local centerSX, centerSY = worldToScreen(x, y, z, view, projection, viewport);
+    if centerSX then
+        for i = 0, segments - 1 do
+            -- Calculate angle for this segment (spread cone_angle around facing direction)
+            -- Add π/2 to rotate 90° clockwise to align with entity facing
+            local t1 = (i / segments) - 0.5; -- Range from -0.5 to 0.5
+            local t2 = ((i + 1) / segments) - 0.5;
+            local theta1 = facing + (t1 * cone_angle) + (math.pi / 2);
+            local theta2 = facing + (t2 * cone_angle) + (math.pi / 2);
+
+            -- Arc points at max range (FFXI uses X=east/west, Y=north/south)
+            local x1 = x + math.sin(theta1) * radius;
+            local y1 = y + math.cos(theta1) * radius;
+            local x2 = x + math.sin(theta2) * radius;
+            local y2 = y + math.cos(theta2) * radius;
+
+            local sx1, sy1 = worldToScreen(x1, y1, z, view, projection, viewport);
+            local sx2, sy2 = worldToScreen(x2, y2, z, view, projection, viewport);
+
+            if sx1 ~= nil and sx2 ~= nil then
+                -- Triangle: center, point1, point2
+                vertices[vidx].x = centerSX;
+                vertices[vidx].y = centerSY;
+                vertices[vidx].z = 0.5;
+                vertices[vidx].rhw = 1.0;
+                vertices[vidx].color = coneColor;
+                vidx = vidx + 1;
+
+                vertices[vidx].x = sx1;
+                vertices[vidx].y = sy1;
+                vertices[vidx].z = 0.5;
+                vertices[vidx].rhw = 1.0;
+                vertices[vidx].color = coneColor;
+                vidx = vidx + 1;
+
+                vertices[vidx].x = sx2;
+                vertices[vidx].y = sy2;
+                vertices[vidx].z = 0.5;
+                vertices[vidx].rhw = 1.0;
+                vertices[vidx].color = coneColor;
+                vidx = vidx + 1;
+            end
+        end
+
+        if vidx > 0 then
+            d3d8dev:DrawPrimitiveUP(C.D3DPT_TRIANGLELIST, vidx / 3, vertices, ffi.sizeof('hitbox_vertex_t'));
+        end
+    end
+
+    -- Draw outline
+    if draw_outline and centerSX then
+        local outlineColor = rgba_to_argb(1.0, 1.0, 1.0, 1.0); -- White outline
+        local lineVertices = ffi.new('hitbox_vertex_t[?]', (segments + 1) * 2 + 4);
+        local lidx = 0;
+
+        -- Draw arc outline
+        for i = 0, segments do
+            local t = (i / segments) - 0.5;
+            local theta = facing + (t * cone_angle) + (math.pi / 2);
+            local px = x + math.sin(theta) * radius;
+            local py = y + math.cos(theta) * radius;
+            local sx, sy = worldToScreen(px, py, z, view, projection, viewport);
+
+            if sx ~= nil then
+                lineVertices[lidx].x = sx;
+                lineVertices[lidx].y = sy;
+                lineVertices[lidx].z = 0.5;
+                lineVertices[lidx].rhw = 1.0;
+                lineVertices[lidx].color = outlineColor;
+                lidx = lidx + 1;
+            end
+        end
+
+        -- Draw left edge from center to arc start
+        local t_start = -0.5;
+        local theta_start = facing + (t_start * cone_angle) + (math.pi / 2);
+        local px_start = x + math.sin(theta_start) * radius;
+        local py_start = y + math.cos(theta_start) * radius;
+        local sx_start, sy_start = worldToScreen(px_start, py_start, z, view, projection, viewport);
+
+        if sx_start ~= nil then
+            lineVertices[lidx].x = centerSX;
+            lineVertices[lidx].y = centerSY;
+            lineVertices[lidx].z = 0.5;
+            lineVertices[lidx].rhw = 1.0;
+            lineVertices[lidx].color = outlineColor;
+            lidx = lidx + 1;
+
+            lineVertices[lidx].x = sx_start;
+            lineVertices[lidx].y = sy_start;
+            lineVertices[lidx].z = 0.5;
+            lineVertices[lidx].rhw = 1.0;
+            lineVertices[lidx].color = outlineColor;
+            lidx = lidx + 1;
+        end
+
+        -- Draw right edge from center to arc end
+        local t_end = 0.5;
+        local theta_end = facing + (t_end * cone_angle) + (math.pi / 2);
+        local px_end = x + math.sin(theta_end) * radius;
+        local py_end = y + math.cos(theta_end) * radius;
+        local sx_end, sy_end = worldToScreen(px_end, py_end, z, view, projection, viewport);
+
+        if sx_end ~= nil then
+            lineVertices[lidx].x = centerSX;
+            lineVertices[lidx].y = centerSY;
+            lineVertices[lidx].z = 0.5;
+            lineVertices[lidx].rhw = 1.0;
+            lineVertices[lidx].color = outlineColor;
+            lidx = lidx + 1;
+
+            lineVertices[lidx].x = sx_end;
+            lineVertices[lidx].y = sy_end;
+            lineVertices[lidx].z = 0.5;
+            lineVertices[lidx].rhw = 1.0;
+            lineVertices[lidx].color = outlineColor;
+            lidx = lidx + 1;
+        end
+
+        if lidx > 0 then
+            d3d8dev:DrawPrimitiveUP(C.D3DPT_LINESTRIP, lidx - 1, lineVertices, ffi.sizeof('hitbox_vertex_t'));
+        end
+    end
+
+    return true;
+end
+
+--[[
 * event: command
 --]]
 ashita.events.register('command', 'command_cb', function(e)
@@ -917,6 +1077,23 @@ ashita.events.register('d3d_present', 'hitbox_present_cb', function()
                         local radius = AOE_RADIUS_VALUES[config.base_aoe.radius_index[1] + 1];
                         draw_aoe_circle(pos.x, pos.y, pos.z, radius, config.base_aoe.color, view, projection, viewport, 0,
                             true);
+                    end
+
+                    -- Target cone from target's facing direction
+                    if config.target_cone.enabled[1] then
+                        local radius = AOE_RADIUS_VALUES[config.target_cone.radius_index[1] + 1];
+                        local angle = config.target_cone.angle[1];
+                        local outline = config.target_cone.outline[1];
+                        local facing = entity.Heading;
+                        if facing then
+                            -- entity.Heading is already in radians
+                            -- Draw front cone
+                            draw_cone(pos.x, pos.y, pos.z, facing, angle, radius, config.target_cone.color, outline, view, projection, viewport);
+                            -- Draw back cone for hourglass shape
+                            if config.target_cone.hourglass[1] then
+                                draw_cone(pos.x, pos.y, pos.z, facing + math.pi, angle, radius, config.target_cone.color, outline, view, projection, viewport);
+                            end
+                        end
                     end
                 end
             end
